@@ -1,65 +1,74 @@
 import db from "../../../lib/db";
 
 export async function GET() {
-  // Indicadores principales
-  const clientes = db.prepare(`
-    SELECT COUNT(*) AS total
-    FROM cliente
-  `).get();
+  try {
+    // Indicadores principales
+    const clientes = await db.execute(`
+      SELECT COUNT(*) AS total
+      FROM cliente
+    `);
 
-  const polizasActivas = db.prepare(`
-    SELECT COUNT(*) AS total
-    FROM poliza
-    WHERE estado = 'ACTIVA'
-  `).get();
+    const polizasActivas = await db.execute(`
+      SELECT COUNT(*) AS total
+      FROM poliza
+      WHERE estado = 'ACTIVA'
+    `);
 
-  const siniestrosAbiertos = db.prepare(`
-    SELECT COUNT(*) AS total
-    FROM siniestro
-    WHERE estado = 'ABIERTO'
-  `).get();
+    const siniestrosAbiertos = await db.execute(`
+      SELECT COUNT(*) AS total
+      FROM siniestro
+      WHERE estado = 'ABIERTO'
+    `);
 
-  const siniestrosCerrados = db.prepare(`
-    SELECT COUNT(*) AS total
-    FROM siniestro
-    WHERE estado = 'CERRADO'
-  `).get();
+    const siniestrosCerrados = await db.execute(`
+      SELECT COUNT(*) AS total
+      FROM siniestro
+      WHERE estado = 'CERRADO'
+    `);
 
-  // Gráfico 1: pólizas por estado
-  const polizasPorEstado = db.prepare(`
-    SELECT estado, COUNT(*) AS cantidad
-    FROM poliza
-    GROUP BY estado
-  `).all();
+    // Gráfico 1: pólizas por estado
+    const polizasPorEstado = await db.execute(`
+      SELECT estado, COUNT(*) AS cantidad
+      FROM poliza
+      GROUP BY estado
+    `);
 
-  // Gráfico 2: siniestros por tipo
-  const siniestrosPorTipo = db.prepare(`
-    SELECT tipo, COUNT(*) AS cantidad
-    FROM siniestro
-    GROUP BY tipo
-  `).all();
+    // Gráfico 2: siniestros por tipo
+    const siniestrosPorTipo = await db.execute(`
+      SELECT tipo, COUNT(*) AS cantidad
+      FROM siniestro
+      GROUP BY tipo
+    `);
 
-  // Gráfico 3: siniestros por mes
-  const siniestrosPorMes = db.prepare(`
-    SELECT
-      strftime('%Y-%m', fecha) AS mes,
-      COUNT(*) AS cantidad
-    FROM siniestro
-    GROUP BY strftime('%Y-%m', fecha)
-    ORDER BY mes
-  `).all();
+    // Gráfico 3: siniestros por mes
+    const siniestrosPorMes = await db.execute(`
+      SELECT
+        strftime('%Y-%m', fecha) AS mes,
+        COUNT(*) AS cantidad
+      FROM siniestro
+      GROUP BY strftime('%Y-%m', fecha)
+      ORDER BY mes
+    `);
 
-  return Response.json({
-    indicadores: {
-      totalClientes: clientes.total,
-      polizasActivas: polizasActivas.total,
-      siniestrosAbiertos: siniestrosAbiertos.total,
-      siniestrosCerrados: siniestrosCerrados.total,
-    },
-    graficos: {
-      polizasPorEstado,
-      siniestrosPorTipo,
-      siniestrosPorMes,
-    },
-  });
+    return Response.json({
+      indicadores: {
+        totalClientes: Number(clientes.rows[0].total),
+        polizasActivas: Number(polizasActivas.rows[0].total),
+        siniestrosAbiertos: Number(siniestrosAbiertos.rows[0].total),
+        siniestrosCerrados: Number(siniestrosCerrados.rows[0].total),
+      },
+      graficos: {
+        polizasPorEstado: polizasPorEstado.rows,
+        siniestrosPorTipo: siniestrosPorTipo.rows,
+        siniestrosPorMes: siniestrosPorMes.rows,
+      },
+    });
+  } catch (error) {
+    console.error("Error al consultar el dashboard:", error.message);
+
+    return Response.json(
+      { error: "No se pudo cargar el dashboard" },
+      { status: 500 }
+    );
+  }
 }

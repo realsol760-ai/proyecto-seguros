@@ -2,134 +2,164 @@ import db from "../../../lib/db";
 
 // Consultar todas las pólizas
 export async function GET() {
-  const polizas = db.prepare(`
-    SELECT
-      poliza.id_poliza,
-      poliza.numero_poliza,
-      poliza.id_cliente,
-      cliente.nombre,
-      cliente.apellido,
-      poliza.fecha_inicio,
-      poliza.fecha_fin,
-      poliza.estado
-    FROM poliza
-    INNER JOIN cliente
-      ON poliza.id_cliente = cliente.id_cliente
-    ORDER BY poliza.id_poliza
-  `).all();
+  try {
+    const resultado = await db.execute(`
+      SELECT
+        poliza.id_poliza,
+        poliza.numero_poliza,
+        poliza.id_cliente,
+        cliente.nombre,
+        cliente.apellido,
+        poliza.fecha_inicio,
+        poliza.fecha_fin,
+        poliza.estado
+      FROM poliza
+      INNER JOIN cliente
+        ON poliza.id_cliente = cliente.id_cliente
+      ORDER BY poliza.id_poliza
+    `);
 
-  return Response.json(polizas);
+    return Response.json(resultado.rows);
+  } catch (error) {
+    return Response.json(
+      { error: "Error al consultar las pólizas" },
+      { status: 500 }
+    );
+  }
 }
 
 // Registrar una póliza nueva
 export async function POST(request) {
-  const datos = await request.json();
+  try {
+    const datos = await request.json();
 
-  const resultado = db.prepare(`
-    INSERT INTO poliza (
-      numero_poliza,
-      id_cliente,
-      fecha_inicio,
-      fecha_fin,
-      estado
-    )
-    VALUES (?, ?, ?, ?, ?)
-  `).run(
-    datos.numero_poliza,
-    datos.id_cliente,
-    datos.fecha_inicio,
-    datos.fecha_fin,
-    datos.estado
-  );
+    const resultado = await db.execute({
+      sql: `INSERT INTO poliza (
+        numero_poliza,
+        id_cliente,
+        fecha_inicio,
+        fecha_fin,
+        estado
+      ) VALUES (?, ?, ?, ?, ?)`,
+      args: [
+        datos.numero_poliza,
+        datos.id_cliente,
+        datos.fecha_inicio,
+        datos.fecha_fin,
+        datos.estado,
+      ],
+    });
 
-  return Response.json({
-    mensaje: "Póliza creada correctamente",
-    id_poliza: resultado.lastInsertRowid
-  });
+    return Response.json({
+      mensaje: "Póliza creada correctamente",
+      id_poliza: Number(resultado.lastInsertRowid),
+    });
+  } catch (error) {
+    return Response.json(
+      { error: "Error al crear la póliza" },
+      { status: 500 }
+    );
+  }
 }
+
 // Modificar una póliza existente
 export async function PUT(request) {
-  const datos = await request.json();
+  try {
+    const datos = await request.json();
 
-  const resultado = db.prepare(`
-    UPDATE poliza
-    SET
-      numero_poliza = ?,
-      id_cliente = ?,
-      fecha_inicio = ?,
-      fecha_fin = ?,
-      estado = ?
-    WHERE id_poliza = ?
-  `).run(
-    datos.numero_poliza,
-    datos.id_cliente,
-    datos.fecha_inicio,
-    datos.fecha_fin,
-    datos.estado,
-    datos.id_poliza
-  );
+    const resultado = await db.execute({
+      sql: `UPDATE poliza
+        SET numero_poliza = ?,
+            id_cliente = ?,
+            fecha_inicio = ?,
+            fecha_fin = ?,
+            estado = ?
+        WHERE id_poliza = ?`,
+      args: [
+        datos.numero_poliza,
+        datos.id_cliente,
+        datos.fecha_inicio,
+        datos.fecha_fin,
+        datos.estado,
+        datos.id_poliza,
+      ],
+    });
 
-  if (resultado.changes === 0) {
+    if (Number(resultado.rowsAffected) === 0) {
+      return Response.json(
+        { mensaje: "No se encontró la póliza para modificar" },
+        { status: 404 }
+      );
+    }
+
+    return Response.json({
+      mensaje: "Póliza actualizada correctamente",
+    });
+  } catch (error) {
     return Response.json(
-      { mensaje: "No se encontró la póliza para modificar" },
-      { status: 404 }
+      { error: "Error al actualizar la póliza" },
+      { status: 500 }
     );
   }
-
-  return Response.json({
-    mensaje: "Póliza actualizada correctamente",
-  });
 }
+
 // Eliminar una póliza existente
 export async function DELETE(request) {
-  const datos = await request.json();
+  try {
+    const datos = await request.json();
 
-  const poliza = db.prepare(`
-    SELECT id_poliza
-    FROM poliza
-    WHERE id_poliza = ?
-  `).get(datos.id_poliza);
+    const poliza = await db.execute({
+      sql: "SELECT id_poliza FROM poliza WHERE id_poliza = ?",
+      args: [datos.id_poliza],
+    });
 
-  if (!poliza) {
+    if (poliza.rows.length === 0) {
+      return Response.json(
+        { mensaje: "No se encontró la póliza" },
+        { status: 404 }
+      );
+    }
+
+    const siniestros = await db.execute({
+      sql: "SELECT COUNT(*) AS cantidad FROM siniestro WHERE id_poliza = ?",
+      args: [datos.id_poliza],
+    });
+
+    const pagos = await db.execute({
+      sql: "SELECT COUNT(*) AS cantidad FROM pago WHERE id_poliza = ?",
+      args: [datos.id_poliza],
+    });
+
+    if (
+      Number(siniestros.rows[0].cantidad) > 0 ||
+      Number(pagos.rows[0].cantidad) > 0
+    ) {
+      return Response.json(
+        {
+          mensaje:
+            "No se puede eliminar esta póliza porque tiene pagos o siniestros asociados.",
+        },
+        { status: 409 }
+      );
+    }
+
+    await db.execute({
+      sql: "DELETE FROM poliza_cobertura WHERE id_poliza = ?",
+      args: [datos.id_poliza],
+    });
+
+    await db.execute({
+      sql: "DELETE FROM poliza WHERE id_poliza = ?",
+      args: [datos.id_poliza],
+    });
+
+    return Response.json({
+      mensaje: "Póliza eliminada correctamente",
+    });
+  } catch (error) {
     return Response.json(
-      { mensaje: "No se encontró la póliza" },
-      { status: 404 }
+      { error: "Error al eliminar la póliza" },
+      { status: 500 }
     );
   }
-
-  const siniestros = db.prepare(`
-    SELECT COUNT(*) AS cantidad
-    FROM siniestro
-    WHERE id_poliza = ?
-  `).get(datos.id_poliza);
-
-  const pagos = db.prepare(`
-    SELECT COUNT(*) AS cantidad
-    FROM pago
-    WHERE id_poliza = ?
-  `).get(datos.id_poliza);
-
-  if (siniestros.cantidad > 0 || pagos.cantidad > 0) {
-    return Response.json(
-      {
-        mensaje:
-          "No se puede eliminar esta póliza porque tiene pagos o siniestros asociados."
-      },
-      { status: 409 }
-    );
-  }
-
-  db.prepare(`
-    DELETE FROM poliza_cobertura
-    WHERE id_poliza = ?
-  `).run(datos.id_poliza);
-
-  db.prepare(`
-    DELETE FROM poliza
-    WHERE id_poliza = ?
-  `).run(datos.id_poliza);
-
-  return Response.json({
-    mensaje: "Póliza eliminada correctamente"
-  });
 }
